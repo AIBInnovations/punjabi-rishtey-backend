@@ -47,7 +47,6 @@ const userSchema = new mongoose.Schema({
     exp_date: { type: Date, default: () => new Date(+new Date() + 365 * 24 * 60 * 60 * 1000) } // 1 year expiry
   },
 
-  profile_picture: { type: String }, // ✅ Single profile picture (Primary)
   profile_pictures: [{ type: String }],
 
   // ✅ Add References to Related Collections

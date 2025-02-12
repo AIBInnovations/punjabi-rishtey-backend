@@ -6,17 +6,65 @@ const Astrology = require("../models/Astrology");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const path = require("path");
+const validator = require("validator");
+const fs = require("fs");
+
+
+
+// const registerUser = async (req, res) => {
+//   try {
+//     const user = new User(req.body);
+//     await user.save();
+//     res.status(201).json({ message: "User Registered Successfully" });
+//   } catch (error) {
+//     res.status(400).json({ error: error.message });
+//   }
+// };
 
 
 const registerUser = async (req, res) => {
   try {
+    const { name, email, password, mobile, gender, dob, religion, marital_status } = req.body;
+
+    // ✅ Check if all required fields are provided
+    if (!name || !email || !password || !mobile || !gender || !dob || !religion || !marital_status) {
+      return res.status(400).json({ message: "All required fields must be provided." });
+    }
+
+    // ✅ Check if email is valid
+    if (!validator.isEmail(email)) {
+      return res.status(400).json({ message: "Invalid email format" });
+    }
+
+    // ✅ Check if password is strong
+    if (!validator.isStrongPassword(password, { minLength: 8, minNumbers: 1, minUppercase: 1, minSymbols: 1 })) {
+      return res.status(400).json({
+        message: "Password must be at least 8 characters long, include a number, an uppercase letter, and a special symbol."
+      });
+    }
+
+    // ✅ Ensure mobile number is exactly 10 digits
+    if (!/^\d{10}$/.test(mobile)) {
+      return res.status(400).json({ message: "Invalid mobile number. It must be 10 digits." });
+    }
+
+    // ✅ Check if email or mobile already exists
+    const existingUser = await User.findOne({ $or: [{ email }, { mobile }] });
+    if (existingUser) {
+      return res.status(400).json({ message: "Email or Mobile number already exists." });
+    }
+
+    // ✅ Save new user
     const user = new User(req.body);
     await user.save();
+
     res.status(201).json({ message: "User Registered Successfully" });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 };
+
+
 
 const loginUser = async (req, res) => {
   try {
@@ -132,30 +180,7 @@ const updateUserProfile = async (req, res) => {
   }
 };
 
-const uploadProfilePicture = async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
-    }
-
-    const userId = req.params.id;
-    const profilePicPath = `/uploads/${req.file.filename}`;
-
-    // Update the user's profile picture in the database
-    const updatedUser = await User.findByIdAndUpdate(userId, { profile_picture: profilePicPath }, { new: true });
-
-    if (!updatedUser) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.json({ message: "Profile picture uploaded successfully", profile_picture: profilePicPath });
-  } catch (error) {
-    console.error("Error uploading profile picture:", error);
-    res.status(500).json({ error: error.message });
-  }
-};
-
-const uploadMultipleProfilePictures = async (req, res) => {
+const uploadProfilePictures = async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ message: "No files uploaded" });
@@ -164,19 +189,70 @@ const uploadMultipleProfilePictures = async (req, res) => {
     const userId = req.params.id;
     const uploadedImages = req.files.map(file => `/uploads/${file.filename}`);
 
-    // ✅ Fetch user from DB
+    // ✅ Find user
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "User Not Found" });
 
-    // ✅ Append new images to existing ones (instead of replacing them)
-    user.profile_pictures = [...(user.profile_pictures || []), ...uploadedImages];
+    // ✅ Append new images to existing images (max 10)
+    user.profile_pictures = [...(user.profile_pictures || []), ...uploadedImages].slice(-10);
     await user.save();
 
     res.json({ message: "Profile pictures uploaded successfully", profile_pictures: user.profile_pictures });
   } catch (error) {
-    console.error("Error uploading multiple profile pictures:", error);
+    console.error("Error uploading profile pictures:", error);
     res.status(500).json({ error: error.message });
   }
 };
 
-module.exports = { registerUser, loginUser, searchMatches, getUserProfile, updateUserProfile, uploadProfilePicture,uploadMultipleProfilePictures };
+
+
+const deleteProfilePicture = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { imagePath } = req.body; // Get the image URL from request body
+
+    // ✅ Ensure user is authenticated and can only delete their own images
+    if (req.user.id !== userId) {
+      return res.status(403).json({ message: "Not authorized to delete this image" });
+    }
+
+    // ✅ Find user in database
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // ✅ Ensure image exists in user's profile
+    if (!user.profile_pictures.includes(imagePath)) {
+      return res.status(400).json({ message: "Image not found in profile" });
+    }
+
+    // ✅ Remove image from MongoDB
+    user.profile_pictures = user.profile_pictures.filter(pic => pic !== imagePath);
+    await user.save();
+
+    // ✅ Remove image from uploads folder
+    const filePath = path.join(__dirname, "../", imagePath); // Get full path
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    res.json({ message: "Profile picture deleted successfully", profile_pictures: user.profile_pictures });
+  } catch (error) {
+    console.error("Error deleting profile picture:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+const logoutUser = async (req, res) => {
+  try {
+    // ✅ On the client side, the token should be removed from local storage/cookies
+    res.json({ message: "User logged out successfully" });
+  } catch (error) {
+    console.error("Error logging out:", error);
+    res.status(500).json({ error: "Server error during logout" });
+  }
+};
+
+
+
+
+module.exports = { registerUser, loginUser, searchMatches, getUserProfile, updateUserProfile, uploadProfilePictures, deleteProfilePicture, logoutUser };
