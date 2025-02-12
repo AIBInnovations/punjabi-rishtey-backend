@@ -2,24 +2,30 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema({
-  name: String,
-  gender: String,
-  age: Number,
-  dob: String,
+  name: { type: String, required: true },
+  gender: { type: String, required: true },
+  dob: { type: String, required: true },
+  age: {
+    type: Number,
+    get: function () {
+      return new Date().getFullYear() - new Date(this.dob).getFullYear();
+    }
+  },
   height: String,
-  religion: String,
-  mobile: String,
-  email: { type: String, unique: true },
-  password: String,
+  religion: { type: String, required: true },
+  caste: { type: String },  // ✅ Adding caste since it's used in search filters
+  mobile: { type: String, unique: true, required: true },
+  email: { type: String, unique: true, required: true },
+  password: { type: String, required: true },
   location: {
     city: String,
     pincode: String,
   },
   hobbies: [String],
-  status: String,
+  status: { type: String, default: "Incomplete" },
   mangalik: Boolean,
   language: String,
-  marital_status: String,
+  marital_status: { type: String, required: true },
   birth_details: {
     birth_time: String,
     birth_place: String,
@@ -37,12 +43,25 @@ const userSchema = new mongoose.Schema({
     nri_status: Boolean,
   },
   metadata: {
-    register_date: Date,
-    exp_date: Date,
+    register_date: { type: Date, default: Date.now },
+    exp_date: { type: Date, default: () => new Date(+new Date() + 365 * 24 * 60 * 60 * 1000) } // 1 year expiry
   },
+
+  profile_picture: { type: String }, // ✅ Single profile picture (Primary)
+  profile_pictures: [{ type: String }],
+
+  // ✅ Add References to Related Collections
+  family_details: { type: mongoose.Schema.Types.ObjectId, ref: "Family" },
+  education_details: { type: mongoose.Schema.Types.ObjectId, ref: "Education" },
+  profession_details: { type: mongoose.Schema.Types.ObjectId, ref: "Profession" },
+  astrology_details: { type: mongoose.Schema.Types.ObjectId, ref: "Astrology" },
+
+  is_deleted: { type: Boolean, default: false }
+
 });
 
-// Hash password before saving
+
+// ✅ Hash password before saving
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   const salt = await bcrypt.genSalt(10);

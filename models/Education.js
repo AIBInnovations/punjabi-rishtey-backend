@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const educationSchema = new mongoose.Schema({
-  user_id: mongoose.Schema.Types.ObjectId,
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   education_level: String,
   education_field: String,
   qualification_details: String,

@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const professionSchema = new mongoose.Schema({
-  user_id: mongoose.Schema.Types.ObjectId,
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   occupation: String,
   designation: String,
   working_with: String,
@@ -12,3 +12,4 @@ const professionSchema = new mongoose.Schema({
 
 const Profession = mongoose.model("Profession", professionSchema);
 module.exports = Profession;
+

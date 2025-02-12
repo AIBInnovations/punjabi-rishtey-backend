@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const familySchema = new mongoose.Schema({
-  user_id: mongoose.Schema.Types.ObjectId,
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   family_value: String,
   family_size: Number,
   mother: {
