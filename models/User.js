@@ -12,6 +12,8 @@ const userSchema = new mongoose.Schema({
     }
   },
   height: String,
+  resetPasswordToken: String,
+  resetPasswordExpires: Date,
   religion: { type: String, required: true },
   caste: { type: String },  // ✅ Adding caste since it's used in search filters
   mobile: { type: String, unique: true, required: true },
@@ -22,7 +24,12 @@ const userSchema = new mongoose.Schema({
     pincode: String,
   },
   hobbies: [String],
-  status: { type: String, default: "Incomplete" },
+  // status: { type: String, default: "Incomplete" },
+  status: { 
+    type: String, 
+    enum: ["Incomplete", "Pending", "Approved", "Expired", "Canceled"], 
+    default: "Pending" // New users will now be "Pending" by default
+  },
   mangalik: Boolean,
   language: String,
   marital_status: { type: String, required: true },

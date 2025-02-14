@@ -8,6 +8,9 @@ const bcrypt = require("bcryptjs");
 const path = require("path");
 const validator = require("validator");
 const fs = require("fs");
+const sendEmail = require("../utils/sendEmail");
+const crypto = require("crypto");
+
 
 
 
@@ -36,6 +39,8 @@ const registerUser = async (req, res) => {
       return res.status(400).json({ message: "Invalid email format" });
     }
 
+    
+
     // ✅ Check if password is strong
     if (!validator.isStrongPassword(password, { minLength: 8, minNumbers: 1, minUppercase: 1, minSymbols: 1 })) {
       return res.status(400).json({
@@ -55,7 +60,7 @@ const registerUser = async (req, res) => {
     }
 
     // ✅ Save new user
-    const user = new User(req.body);
+    const user = new User({ ...req.body, status: "Pending" });
     await user.save();
 
     res.status(201).json({ message: "User Registered Successfully" });
@@ -66,21 +71,53 @@ const registerUser = async (req, res) => {
 
 
 
+// const loginUser = async (req, res) => {
+//   try {
+//     const { email, password } = req.body;
+//     const user = await User.findOne({ email });
+//     if (!user) return res.status(404).json({ message: "User Not Found" });
+
+//     const isMatch = await bcrypt.compare(password, user.password);
+//     if (!isMatch) return res.status(400).json({ message: "Invalid Credentials" });
+
+//     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+//     res.json({ token, user });
+//   } catch (error) {
+//     res.status(500).json({ error: error.message });
+//   }
+// };
+
 const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log("🔍 Login Attempt for Email:", email);
+    console.log("🔑 Entered Password Before Hashing:", password);
+
+    // ✅ Find user by email
     const user = await User.findOne({ email });
     if (!user) return res.status(404).json({ message: "User Not Found" });
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: "Invalid Credentials" });
+    console.log("🔑 Stored Hashed Password in DB:", user.password);
 
+    // ✅ Compare entered password with hashed password
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
+      console.log("❌ Password does not match!");
+      return res.status(400).json({ message: "Invalid Credentials" });
+    }
+
+    console.log("✅ Password Matched! Generating JWT...");
+
+    // ✅ Generate JWT Token
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
     res.json({ token, user });
   } catch (error) {
+    console.error("❌ Error in login:", error);
     res.status(500).json({ error: error.message });
   }
 };
+
 
 const searchMatches = async (req, res) => {
   try {
@@ -101,6 +138,7 @@ const searchMatches = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
 
 
 const getUserProfile = async (req, res) => {
@@ -141,6 +179,7 @@ const getUserProfile = async (req, res) => {
 
 
 
+
 const updateUserProfile = async (req, res) => {
   try {
     const userId = req.params.id;
@@ -165,6 +204,7 @@ const updateUserProfile = async (req, res) => {
         updates[key] = req.body[key];
       }
     }
+
 
     // Update user details in the database
     const updatedUser = await User.findByIdAndUpdate(userId, updates, { new: true, runValidators: true }).select("-password");
@@ -253,6 +293,102 @@ const logoutUser = async (req, res) => {
 };
 
 
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // ✅ Find user by email
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // ✅ Generate reset token
+    const resetToken = crypto.randomBytes(20).toString("hex");
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour expiry
+
+    await user.save();
+
+    // ✅ Send reset email
+    const resetUrl = `${req.protocol}://${req.get("host")}/api/users/reset-password/${resetToken}`;
+    const message = `Click the link to reset your password: ${resetUrl}`;
+
+    await sendEmail(user.email, "Password Reset", message);
+
+    res.json({ message: "Password reset email sent" });
+  } catch (error) {
+    console.error("Error in forgot password:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+// const resetPassword = async (req, res) => {
+//   try {
+//     const { token } = req.params;
+//     const { newPassword } = req.body;
+
+//     // ✅ Find user with valid reset token
+//     const user = await User.findOne({
+//       resetPasswordToken: token,
+//       resetPasswordExpires: { $gt: Date.now() }, // Ensure token is not expired
+//     });
+
+//     if (!user) return res.status(400).json({ message: "Invalid or expired token" });
+
+//     // ✅ Hash new password
+//     const salt = await bcrypt.genSalt(10);
+//     user.password = await bcrypt.hash(newPassword, salt);
+
+//     // ✅ Clear reset token fields
+//     user.resetPasswordToken = undefined;
+//     user.resetPasswordExpires = undefined;
+
+//     await user.save();
+
+//     res.json({ message: "Password reset successful" });
+//   } catch (error) {
+//     console.error("Error resetting password:", error);
+//     res.status(500).json({ error: "Server error" });
+//   }
+// };
+const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { newPassword } = req.body;
+
+    // ✅ Find user with valid reset token
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() }, // Ensure token is not expired
+    });
+
+    if (!user) return res.status(400).json({ message: "Invalid or expired token" });
+
+    console.log("🔑 New Password Before Hashing:", newPassword);
+
+    // ✅ Ensure password is not already hashed (ALWAYS HASH IT)
+    if (!newPassword.startsWith("$2a$")) {
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(newPassword, salt);
+    } else {
+      console.log("⚠ Skipping re-hashing since password is already hashed!");
+      user.password = newPassword; // If it’s already hashed (this should never happen)
+    }
+
+    console.log("✅ New Hashed Password to Save:", user.password);
+
+    // ✅ Clear reset token fields
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+
+    await user.save();
+
+    console.log("✅ Password updated successfully in database");
+    res.json({ message: "Password reset successful. You can now log in." });
+  } catch (error) {
+    console.error("❌ Error resetting password:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+};
 
 
-module.exports = { registerUser, loginUser, searchMatches, getUserProfile, updateUserProfile, uploadProfilePictures, deleteProfilePicture, logoutUser };
+module.exports = { registerUser, loginUser, searchMatches, getUserProfile, updateUserProfile, uploadProfilePictures, deleteProfilePicture, logoutUser, forgotPassword, resetPassword };
